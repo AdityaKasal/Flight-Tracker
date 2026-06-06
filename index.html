@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SkyTrack — Live Flight Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg:#0a0e1a; --card:#111827; --card2:#1a2236; --border:#1e2d45;
+    --accent:#3b82f6; --accent2:#06b6d4; --green:#10b981; --yellow:#f59e0b;
+    --red:#ef4444; --text:#e2e8f0; --muted:#64748b; --radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;}
+  header{background:linear-gradient(135deg,#0f172a,#1e3a5f);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:1000;}
+  .logo{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:700;color:var(--accent2);}
+  .live-dot{width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 1.5s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+  .app{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 64px);}
+  .sidebar{background:var(--card);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;}
+  .map-area{position:relative;}
+
+  .search-panel{padding:20px;border-bottom:1px solid var(--border);}
+  .search-panel h3{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px;}
+  .search-row{display:flex;gap:8px;margin-bottom:10px;}
+  .search-input{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;}
+  .search-input:focus{border-color:var(--accent);}
+  .search-input::placeholder{color:var(--muted);}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:background .2s;white-space:nowrap;}
+  .btn:hover{background:#2563eb;}
+  .btn:disabled{background:var(--muted);cursor:not-allowed;}
+
+  .filter-row{display:flex;gap:8px;}
+  .filter-select{flex:1;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;cursor:pointer;}
+  .filter-select:focus{border-color:var(--accent);}
+
+  .dir-tabs{display:flex;gap:6px;margin-top:10px;}
+  .dir-tab{flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;}
+  .dir-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+  .tab-bar{display:flex;border-bottom:1px solid var(--border);}
+  .tab{flex:1;padding:13px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s;}
+  .tab.active{color:var(--accent2);border-bottom-color:var(--accent2);}
+
+  .stats-bar{display:flex;border-bottom:1px solid var(--border);}
+  .stat{flex:1;padding:10px 0;text-align:center;border-right:1px solid var(--border);}
+  .stat:last-child{border-right:none;}
+  .stat-num{font-size:18px;font-weight:700;color:var(--accent2);}
+  .stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+
+  .flight-list{flex:1;overflow-y:auto;padding:12px;}
+  .flight-card{background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px;cursor:pointer;transition:border-color .2s,transform .1s;position:relative;}
+  .flight-card:hover{border-color:var(--accent);transform:translateY(-1px);}
+  .flight-card.selected{border-color:var(--accent2);background:#0e1e35;}
+  .flight-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .flight-number{font-size:16px;font-weight:700;color:var(--accent2);}
+  .airline-name{font-size:12px;color:var(--muted);}
+  .status-badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+  .status-scheduled{background:rgba(100,116,139,.15);color:var(--muted);border:1px solid rgba(100,116,139,.3);}
+  .status-active{background:rgba(6,182,212,.15);color:var(--accent2);border:1px solid rgba(6,182,212,.3);}
+  .status-landed{background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(16,185,129,.3);}
+  .status-cancelled{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);}
+  .status-incident{background:rgba(249,115,22,.15);color:#f97316;border:1px solid rgba(249,115,22,.3);}
+  .status-diverted{background:rgba(245,158,11,.15);color:var(--yellow);border:1px solid rgba(245,158,11,.3);}
+
+  .route-row{display:flex;align-items:center;gap:8px;font-size:13px;}
+  .city-code{font-size:20px;font-weight:700;color:var(--text);}
+  .route-line{flex:1;display:flex;align-items:center;gap:4px;color:var(--muted);}
+  .route-dots{flex:1;border-top:1px dashed var(--muted);}
+  .flight-meta{display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--muted);}
+  .gate-info{font-size:12px;margin-top:8px;padding:6px 10px;border-radius:6px;}
+  .gate-normal{background:rgba(16,185,129,.1);color:var(--green);border:1px solid rgba(16,185,129,.2);}
+  .gate-changed{background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.2);animation:gatePulse 2s infinite;}
+  @keyframes gatePulse{0%,100%{border-color:rgba(239,68,68,.2)}50%{border-color:rgba(239,68,68,.7)}}
+  .progress-bar{height:3px;background:var(--border);border-radius:2px;margin-top:10px;overflow:hidden;}
+  .progress-fill{height:100%;border-radius:2px;}
+
+  .empty-state{text-align:center;padding:40px 20px;color:var(--muted);}
+  .empty-icon{font-size:48px;margin-bottom:12px;}
+  .loading{text-align:center;padding:30px;color:var(--muted);}
+  .spinner{display:inline-block;width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:10px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  #map{width:100%;height:100%;}
+  .leaflet-container{background:#0a1628!important;}
+
+  .detail-overlay{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(0deg,rgba(10,14,26,.98) 80%,transparent);padding:20px 24px 24px;z-index:500;border-top:1px solid var(--border);transform:translateY(100%);transition:transform .3s ease;}
+  .detail-overlay.open{transform:translateY(0);}
+  .detail-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;}
+  .detail-flight-id{font-size:28px;font-weight:800;color:var(--accent2);}
+  .detail-airline{font-size:14px;color:var(--muted);margin-top:2px;}
+  .close-btn{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:8px 12px;cursor:pointer;font-size:18px;line-height:1;}
+  .detail-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
+  .detail-cell{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:12px;}
+  .detail-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+  .detail-value{font-size:16px;font-weight:700;color:var(--text);}
+  .detail-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+  .gate-alert{margin-top:14px;padding:12px 16px;border-radius:8px;display:flex;align-items:center;gap:10px;}
+  .gate-alert-normal{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);}
+  .gate-alert-changed{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);animation:gatePulse 2s infinite;}
+  .gate-alert-text strong{display:block;font-size:14px;margin-bottom:2px;}
+  .gate-alert-text span{font-size:12px;color:var(--muted);}
+
+  .map-legend{position:absolute;top:12px;right:12px;z-index:500;background:rgba(17,24,39,.9);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:12px;min-width:150px;}
+  .map-legend h4{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+  .legend-item{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--text);}
+  .legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+  .toast{position:fixed;top:80px;right:20px;z-index:3000;background:var(--card);border:1px solid var(--accent2);border-radius:10px;padding:14px 18px;max-width:300px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:translateX(120%);transition:transform .3s;color:var(--text);}
+  .toast.show{transform:translateX(0);}
+  .toast-title{font-weight:700;color:var(--accent2);margin-bottom:4px;font-size:14px;}
+  .toast-body{font-size:13px;color:var(--muted);}
+
+  ::-webkit-scrollbar{width:4px;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+  .country-badge{background:var(--card2);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;}
+
+  @media(max-width:900px){
+    .app{grid-template-columns:1fr;grid-template-rows:50vh 1fr;}
+    .map-area{order:-1;}
+    .detail-grid{grid-template-columns:repeat(3,1fr);}
+  }
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast">
+  <div class="toast-title" id="toastTitle"></div>
+  <div class="toast-body" id="toastBody"></div>
+</div>
+
+<header>
+  <div class="logo">✈ SkyTrack</div>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div class="live-dot"></div>
+    <span style="font-size:13px;color:var(--muted)">Real-Time Data</span>
+    <div class="country-badge" id="apiStatus">⏳ Loading...</div>
+  </div>
+</header>
+
+<div class="app">
+  <div class="sidebar">
+    <!-- Search -->
+    <div class="search-panel">
+      <h3>Search Flight</h3>
+      <div class="search-row">
+        <input class="search-input" id="flightSearch" placeholder="Flight no. e.g. AA100, BA256" />
+        <button class="btn" id="searchBtn" onclick="searchFlight()">Find</button>
+      </div>
+      <h3 style="margin-bottom:8px">Filter by Airport</h3>
+      <div class="filter-row">
+        <input class="search-input" id="airportFilter" placeholder="Airport IATA e.g. JFK, LHR" maxlength="3" style="text-transform:uppercase" />
+        <button class="btn" onclick="filterByAirport()">Go</button>
+      </div>
+      <div class="dir-tabs">
+        <button class="dir-tab active" id="dTab-all" onclick="setDir('all')">All</button>
+        <button class="dir-tab" id="dTab-dep" onclick="setDir('dep')">Departing</button>
+        <button class="dir-tab" id="dTab-arr" onclick="setDir('arr')">Arriving</button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar">
+      <div class="stat"><div class="stat-num" id="statTotal">—</div><div class="stat-lbl">Total</div></div>
+      <div class="stat"><div class="stat-num" id="statActive">—</div><div class="stat-lbl">Airborne</div></div>
+      <div class="stat"><div class="stat-num" id="statSched">—</div><div class="stat-lbl">Scheduled</div></div>
+      <div class="stat"><div class="stat-num" id="statLanded">—</div><div class="stat-lbl">Landed</div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <div class="tab" id="tab-dom" onclick="switchTab('dom')">🏠 Domestic</div>
+      <div class="tab active" id="tab-intl" onclick="switchTab('intl')">🌐 International</div>
+    </div>
+
+    <div class="flight-list" id="flightList">
+      <div class="loading"><div class="spinner"></div><div>Loading live flights...</div></div>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div class="map-area">
+    <div id="map"></div>
+    <div class="map-legend">
+      <h4>Status</h4>
+      <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Active / Airborne</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div>Scheduled</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Landed</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Cancelled</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Diverted</div>
+    </div>
+    <div class="detail-overlay" id="detailPanel">
+      <div class="detail-header">
+        <div>
+          <div class="detail-flight-id" id="dFlightId">—</div>
+          <div class="detail-airline" id="dAirline">—</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="dStatusBadge" class="status-badge">—</span>
+          <button class="close-btn" onclick="closeDetail()">×</button>
+        </div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-cell"><div class="detail-label">From</div><div class="detail-value" id="dFrom">—</div><div class="detail-sub" id="dFromCity">—</div></div>
+        <div class="detail-cell"><div class="detail-label">To</div><div class="detail-value" id="dTo">—</div><div class="detail-sub" id="dToCity">—</div></div>
+        <div class="detail-cell"><div class="detail-label">Departure</div><div class="detail-value" id="dDep">—</div><div class="detail-sub" id="dDepSub">—</div></div>
+        <div class="detail-cell"><div class="detail-label">Arrival</div><div class="detail-value" id="dArr">—</div><div class="detail-sub" id="dArrSub">—</div></div>
+        <div class="detail-cell"><div class="detail-label">Altitude / Speed</div><div class="detail-value" id="dAlt">—</div><div class="detail-sub" id="dSpeed">—</div></div>
+      </div>
+      <div class="gate-alert" id="gateAlert">
+        <div style="font-size:22px" id="gateIcon">🚪</div>
+        <div class="gate-alert-text"><strong id="gateTitle">—</strong><span id="gateBody">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── AIRPORTS lookup for lat/lng ───
+const AIRPORTS = {
+  JFK:{city:"New York",lat:40.6413,lng:-73.7781},LAX:{city:"Los Angeles",lat:33.9425,lng:-118.408},
+  ORD:{city:"Chicago",lat:41.9742,lng:-87.9073},SFO:{city:"San Francisco",lat:37.6213,lng:-122.379},
+  MIA:{city:"Miami",lat:25.7959,lng:-80.287},ATL:{city:"Atlanta",lat:33.6407,lng:-84.4277},
+  DFW:{city:"Dallas",lat:32.8998,lng:-97.0403},SEA:{city:"Seattle",lat:47.4502,lng:-122.309},
+  BOS:{city:"Boston",lat:42.3656,lng:-71.0096},DEN:{city:"Denver",lat:39.8561,lng:-104.673},
+  LHR:{city:"London",lat:51.4775,lng:-0.4614},LGW:{city:"London Gatwick",lat:51.1537,lng:-0.1821},
+  CDG:{city:"Paris",lat:49.0097,lng:2.5479},FRA:{city:"Frankfurt",lat:50.0333,lng:8.5706},
+  AMS:{city:"Amsterdam",lat:52.3086,lng:4.7639},MAD:{city:"Madrid",lat:40.4936,lng:-3.5668},
+  FCO:{city:"Rome",lat:41.8003,lng:12.2389},MUC:{city:"Munich",lat:48.3538,lng:11.7861},
+  DXB:{city:"Dubai",lat:25.2532,lng:55.3657},AUH:{city:"Abu Dhabi",lat:24.4330,lng:54.6511},
+  DOH:{city:"Doha",lat:25.2609,lng:51.6138},SIN:{city:"Singapore",lat:1.3644,lng:103.9915},
+  HKG:{city:"Hong Kong",lat:22.3080,lng:113.9185},NRT:{city:"Tokyo",lat:35.7647,lng:140.3864},
+  ICN:{city:"Seoul",lat:37.4602,lng:126.4407},PEK:{city:"Beijing",lat:40.0799,lng:116.6031},
+  SYD:{city:"Sydney",lat:-33.9399,lng:151.1753},MEL:{city:"Melbourne",lat:-37.6690,lng:144.8410},
+  DEL:{city:"Delhi",lat:28.5665,lng:77.1031},BOM:{city:"Mumbai",lat:19.0896,lng:72.8656},
+  BLR:{city:"Bangalore",lat:13.1986,lng:77.7066},YYZ:{city:"Toronto",lat:43.6772,lng:-79.6306},
+  YVR:{city:"Vancouver",lat:49.1947,lng:-123.179},GRU:{city:"São Paulo",lat:-23.4356,lng:-46.4731},
+};
+
+function getAP(iata){ return AIRPORTS[iata] || null; }
+
+let allFlights = [];
+let selectedFlight = null;
+let activeTab = 'intl';
+let activeDir = 'all';
+let currentAirport = '';
+let currentDirMode = 'all';
+let routeLayers = [];
+let planeMarker = null;
+let map;
+
+// ─── STATUS helpers ───
+function statusClass(s){
+  return {active:'status-active',scheduled:'status-scheduled',landed:'status-landed',cancelled:'status-cancelled',incident:'status-incident',diverted:'status-diverted'}[s]||'status-scheduled';
+}
+function statusLabel(s){
+  return {active:'Airborne',scheduled:'Scheduled',landed:'Landed',cancelled:'Cancelled',incident:'Incident',diverted:'Diverted'}[s]||s;
+}
+function statusColor(s){
+  return {active:'#06b6d4',scheduled:'#64748b',landed:'#10b981',cancelled:'#ef4444',diverted:'#f59e0b'}[s]||'#64748b';
+}
+
+function fmtTime(iso){
+  if(!iso) return '—';
+  return new Date(iso).toTimeString().slice(0,5);
+}
+
+function isDomestic(f){
+  const dep = f.departure?.iata;
+  const arr = f.arrival?.iata;
+  if(!dep||!arr) return false;
+  const dAP = getAP(dep);
+  const aAP = getAP(arr);
+  // Simple heuristic: same region prefix or both in same country group
+  // Use country from API if available
+  const depCountry = f.departure?.country || '';
+  const arrCountry = f.arrival?.country || '';
+  if(depCountry && arrCountry) return depCountry === arrCountry;
+  // Fallback: same 2-letter prefix (rough heuristic)
+  const regionOf = code => {
+    const US=['JFK','LAX','ORD','SFO','MIA','ATL','DFW','SEA','BOS','DEN','LAS','PHX','IAH','MCO','EWR'];
+    const EU=['LHR','LGW','CDG','FRA','AMS','MAD','FCO','MUC','BCN','CPH','DUB','VIE','ZRH','BRU','LIS'];
+    const IN=['DEL','BOM','BLR','HYD','MAA','CCU','GOI','AMD'];
+    if(US.includes(code)) return 'US';
+    if(EU.includes(code)) return 'EU';
+    if(IN.includes(code)) return 'IN';
+    return code.slice(0,1);
+  };
+  return regionOf(dep) === regionOf(arr);
+}
+
+// ─── FETCH from our proxy ───
+async function fetchFlights(params={}) {
+  const q = new URLSearchParams(params);
+  const res = await fetch(`/api/flights?${q}`);
+  if(!res.ok) throw new Error('API error');
+  return res.json();
+}
+
+// ─── LOAD flights ───
+async function loadFlights(params={}) {
+  document.getElementById('flightList').innerHTML = '<div class="loading"><div class="spinner"></div><div>Fetching live flights...</div></div>';
+  try {
+    const data = await fetchFlights({ limit: 25, ...params });
+    allFlights = (data.data || []).filter(f => f.departure?.iata && f.arrival?.iata);
+    renderList();
+    updateStats();
+    document.getElementById('apiStatus').textContent = `✅ Live · ${allFlights.length} flights`;
+    // Drop pins for all active flights on map
+    plotAllFlights();
+  } catch(e) {
+    document.getElementById('flightList').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Failed to load flights</div><div style="font-size:12px;margin-top:6px">${e.message}</div></div>`;
+    document.getElementById('apiStatus').textContent = '❌ API Error';
+  }
+}
+
+// ─── RENDER LIST ───
+function renderList(){
+  const list = document.getElementById('flightList');
+  let flights = allFlights.filter(f => {
+    if(activeTab==='dom' && !isDomestic(f)) return false;
+    if(activeTab==='intl' && isDomestic(f)) return false;
+    return true;
+  });
+
+  if(!flights.length){
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div>No flights in this category</div><div style="font-size:12px;margin-top:6px">Try switching tabs or searching</div></div>';
+    return;
+  }
+
+  list.innerHTML = flights.map(f => {
+    const dep = f.departure?.iata||'???';
+    const arr = f.arrival?.iata||'???';
+    const depCity = f.departure?.airport||dep;
+    const arrCity = f.arrival?.airport||arr;
+    const status = f.flight_status||'scheduled';
+    const flightNum = f.flight?.iata || f.flight?.number || '—';
+    const airline = f.airline?.name || '—';
+    const depTime = fmtTime(f.departure?.scheduled);
+    const arrTime = fmtTime(f.arrival?.scheduled);
+
+    // Gate info
+    const depGate = f.departure?.gate;
+    const gateHtml = depGate && (status==='scheduled'||status==='active')
+      ? `<div class="gate-info gate-normal">🚪 Gate <b>${depGate}</b>${f.departure?.terminal?` · Terminal ${f.departure.terminal}`:''}</div>`
+      : '';
+
+    // Progress bar for active flights
+    const prog = status==='active' ? `<div class="progress-bar"><div class="progress-fill" style="width:50%;background:${statusColor(status)}"></div></div>` : '';
+
+    return `<div class="flight-card ${selectedFlight?.flight?.iata===f.flight?.iata?'selected':''}" onclick="selectFlight('${flightNum}')">
+      <div class="flight-card-header">
+        <div><div class="flight-number">${flightNum}</div><div class="airline-name">${airline}</div></div>
+        <span class="status-badge ${statusClass(status)}">${statusLabel(status)}</span>
+      </div>
+      <div class="route-row">
+        <span class="city-code">${dep}</span>
+        <div class="route-line"><div class="route-dots"></div><span>✈</span><div class="route-dots"></div></div>
+        <span class="city-code">${arr}</span>
+      </div>
+      <div class="flight-meta">
+        <span>${depCity.split(' ')[0]}</span>
+        <span>${depTime} → ${arrTime}</span>
+        <span>${arrCity.split(' ')[0]}</span>
+      </div>
+      ${gateHtml}${prog}
+    </div>`;
+  }).join('');
+}
+
+function updateStats(){
+  const active = allFlights.filter(f=>f.flight_status==='active').length;
+  const sched = allFlights.filter(f=>f.flight_status==='scheduled').length;
+  const landed = allFlights.filter(f=>f.flight_status==='landed').length;
+  document.getElementById('statTotal').textContent = allFlights.length;
+  document.getElementById('statActive').textContent = active;
+  document.getElementById('statSched').textContent = sched;
+  document.getElementById('statLanded').textContent = landed;
+}
+
+// ─── MAP ───
+function initMap(){
+  map = L.map('map',{zoomControl:true,attributionControl:false}).setView([30,0],2);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(map);
+  map.on('click', closeDetail);
+}
+
+function clearMap(){
+  routeLayers.forEach(l=>map.removeLayer(l));
+  routeLayers=[];
+  if(planeMarker){map.removeLayer(planeMarker);planeMarker=null;}
+}
+
+function plotAllFlights(){
+  clearMap();
+  allFlights.forEach(f => {
+    const live = f.live;
+    if(!live||live.is_ground) return;
+    const lat = live.latitude, lng = live.longitude;
+    if(!lat||!lng) return;
+    const flightNum = f.flight?.iata||'?';
+    const status = f.flight_status||'scheduled';
+    const angle = live.direction||0;
+    const icon = L.divIcon({
+      html:`<div style="font-size:16px;transform:rotate(${angle}deg);filter:drop-shadow(0 0 4px ${statusColor(status)});line-height:1;opacity:.85;">✈</div>`,
+      iconSize:[20,20],iconAnchor:[10,10],className:''
+    });
+    const m = L.marker([lat,lng],{icon}).addTo(map)
+      .bindPopup(`<b>${flightNum}</b><br>${f.airline?.name||''}<br>${statusLabel(status)}`);
+    m.on('click',()=>selectFlight(flightNum));
+    routeLayers.push(m);
+  });
+}
+
+function drawRoute(f){
+  clearMap();
+  const dep = f.departure?.iata;
+  const arr = f.arrival?.iata;
+  const fromAP = getAP(dep);
+  const toAP   = getAP(arr);
+  if(!fromAP||!toAP) return;
+
+  // Dashed route line
+  const pts=[];
+  for(let i=0;i<=60;i++) pts.push([fromAP.lat+(toAP.lat-fromAP.lat)*i/60, fromAP.lng+(toAP.lng-fromAP.lng)*i/60]);
+  const line = L.polyline(pts,{color:'#3b82f6',weight:2,dashArray:'6 8',opacity:.7}).addTo(map);
+  routeLayers.push(line);
+
+  // Airport dots
+  [[fromAP,'#10b981'],[toAP,'#f59e0b']].forEach(([ap,col])=>{
+    const m = L.circleMarker([ap.lat,ap.lng],{radius:7,fillColor:col,color:'#fff',weight:2,fillOpacity:1}).addTo(map);
+    routeLayers.push(m);
+  });
+
+  // Live plane position
+  const live = f.live;
+  if(live&&!live.is_ground&&live.latitude&&live.longitude){
+    const angle = live.direction||0;
+    const status = f.flight_status||'active';
+    const icon = L.divIcon({
+      html:`<div style="font-size:24px;transform:rotate(${angle}deg);filter:drop-shadow(0 0 8px ${statusColor(status)});line-height:1;">✈</div>`,
+      iconSize:[30,30],iconAnchor:[15,15],className:''
+    });
+    planeMarker = L.marker([live.latitude,live.longitude],{icon,zIndexOffset:1000}).addTo(map);
+  }
+
+  const bounds = L.latLngBounds([[fromAP.lat,fromAP.lng],[toAP.lat,toAP.lng]]);
+  map.fitBounds(bounds,{padding:[60,60]});
+}
+
+// ─── SELECT FLIGHT ───
+function selectFlight(flightNum){
+  selectedFlight = allFlights.find(f=>(f.flight?.iata===flightNum||f.flight?.number===flightNum));
+  if(!selectedFlight) return;
+  const f = selectedFlight;
+  const status = f.flight_status||'scheduled';
+
+  document.getElementById('dFlightId').textContent = f.flight?.iata||flightNum;
+  document.getElementById('dAirline').textContent = f.airline?.name||'—';
+  document.getElementById('dStatusBadge').textContent = statusLabel(status);
+  document.getElementById('dStatusBadge').className = 'status-badge '+statusClass(status);
+  document.getElementById('dFrom').textContent = f.departure?.iata||'—';
+  document.getElementById('dFromCity').textContent = f.departure?.airport||'—';
+  document.getElementById('dTo').textContent = f.arrival?.iata||'—';
+  document.getElementById('dToCity').textContent = f.arrival?.airport||'—';
+  document.getElementById('dDep').textContent = fmtTime(f.departure?.actual||f.departure?.scheduled);
+  document.getElementById('dDepSub').textContent = f.departure?.actual?'Actual':'Scheduled';
+  document.getElementById('dArr').textContent = fmtTime(f.arrival?.estimated||f.arrival?.scheduled);
+  document.getElementById('dArrSub').textContent = f.arrival?.estimated?'Estimated':'Scheduled';
+  document.getElementById('dAlt').textContent = f.live?.altitude ? Math.round(f.live.altitude).toLocaleString()+' ft' : 'On Ground';
+  document.getElementById('dSpeed').textContent = f.live?.speed_horizontal ? Math.round(f.live.speed_horizontal)+' kts' : '—';
+
+  // Gate info
+  const ga = document.getElementById('gateAlert');
+  const gate = f.departure?.gate;
+  const terminal = f.departure?.terminal;
+  if(status==='active'&&f.live&&!f.live.is_ground){
+    ga.className='gate-alert gate-alert-normal';
+    document.getElementById('gateIcon').textContent='✈️';
+    document.getElementById('gateTitle').textContent=`Airborne · ${Math.round(f.live.speed_horizontal||0)} kts`;
+    document.getElementById('gateBody').textContent=`Altitude ${Math.round(f.live.altitude||0).toLocaleString()} ft`;
+  } else if(gate){
+    ga.className='gate-alert gate-alert-normal';
+    document.getElementById('gateIcon').textContent='🚪';
+    document.getElementById('gateTitle').textContent=`Gate ${gate}${terminal?` · Terminal ${terminal}`:''}`;
+    document.getElementById('gateBody').textContent=status==='scheduled'?'Proceed to gate at least 45 min before departure.':'';
+  } else {
+    ga.className='gate-alert gate-alert-normal';
+    document.getElementById('gateIcon').textContent='ℹ️';
+    document.getElementById('gateTitle').textContent='Gate not assigned yet';
+    document.getElementById('gateBody').textContent='Check airport screens closer to departure.';
+  }
+
+  document.getElementById('detailPanel').classList.add('open');
+  drawRoute(f);
+  renderList();
+}
+
+function closeDetail(){
+  document.getElementById('detailPanel').classList.remove('open');
+  selectedFlight=null;
+  plotAllFlights();
+  renderList();
+}
+
+// ─── SEARCH ───
+async function searchFlight(){
+  const q = document.getElementById('flightSearch').value.trim().toUpperCase();
+  if(!q) return;
+  const btn = document.getElementById('searchBtn');
+  btn.disabled=true; btn.textContent='...';
+  try {
+    await loadFlights({flight_iata: q});
+    if(allFlights.length) selectFlight(allFlights[0].flight?.iata);
+  } finally { btn.disabled=false; btn.textContent='Find'; }
+}
+
+// ─── AIRPORT FILTER ───
+async function filterByAirport(){
+  const code = document.getElementById('airportFilter').value.trim().toUpperCase();
+  if(!code) return;
+  currentAirport = code;
+  if(activeDir==='dep') await loadFlights({dep_iata:code});
+  else if(activeDir==='arr') await loadFlights({arr_iata:code});
+  else await loadFlights({dep_iata:code});
+}
+
+function setDir(d){
+  activeDir=d;
+  ['all','dep','arr'].forEach(x=>document.getElementById('dTab-'+x).classList.toggle('active',x===d));
+  if(currentAirport) filterByAirport();
+}
+
+function switchTab(tab){
+  activeTab=tab;
+  document.getElementById('tab-dom').classList.toggle('active',tab==='dom');
+  document.getElementById('tab-intl').classList.toggle('active',tab==='intl');
+  renderList();
+}
+
+function showToast(title,body){
+  document.getElementById('toastTitle').textContent=title;
+  document.getElementById('toastBody').textContent=body;
+  const t=document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),4000);
+}
+
+// ─── INIT ───
+window.addEventListener('load',()=>{
+  initMap();
+  // Load active flights by default
+  loadFlights({flight_status:'active',limit:25});
+
+  document.getElementById('flightSearch').addEventListener('keydown',e=>{if(e.key==='Enter')searchFlight();});
+  document.getElementById('airportFilter').addEventListener('keydown',e=>{if(e.key==='Enter')filterByAirport();});
+
+  // Auto-refresh disabled to conserve free tier quota (100 req/month)
+  // Data only fetches on search or airport filter
+});
+</script>
+</body>
+</html>
